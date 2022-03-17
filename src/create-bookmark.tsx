@@ -1,3 +1,5 @@
+import React from 'react'
+import { v4 as uuidv4 } from 'uuid'
 import {
   Action,
   ActionPanel,
@@ -7,7 +9,7 @@ import {
   Toast,
   useNavigation,
 } from '@raycast/api'
-import { db, Bookmark, InProgressBookmark } from './db'
+import { db, InProgressBookmark } from './db'
 
 const CreateBookmark = () => {
   return (
@@ -42,6 +44,7 @@ export const Submit = () => {
     }
     db.read()
     db.data.bookmarks.push({
+      id: uuidv4(),
       url,
       title: title || '',
       keywords: keywords || '',
