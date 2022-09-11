@@ -55,7 +55,7 @@ const SearchBookmarks = () => {
       ],
     })
 
-    pipe(searchText, fuse.search, A.map(R.prop('item')), setSearchResults)
+    pipe(fuse.search(searchText), A.map(R.prop('item')), setSearchResults)
   }, [searchText, allBookmarks])
 
   return (
