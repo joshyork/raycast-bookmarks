@@ -20,6 +20,15 @@
       "mode": "view"
     }
   ],
+  "preferences": [
+    {
+      "name": "gh_access_token",
+      "type": "textfield",
+      "required": true,
+      "title": "GitHub Personal Access token",
+      "description": "Personal Access token with permissions to create Gists"
+    }
+  ],
   "scripts": {
     "build": "ray build -e dist",
     "dev": "ray develop",
@@ -28,24 +37,28 @@
     "script:fromFilemark": "ts-node ./scripts/fromFilemark.ts"
   },
   "dependencies": {
-    "@raycast/api": "^1.30.3",
-    "@types/fs-extra": "^9.0.13",
-    "@types/uuid": "^8.3.4",
+    "@raycast/api": "^1.39.3",
+    "@typedash/typedash": "^0.0.1",
+    "fp-ts": "2.11.5",
     "fs-extra": "^10.0.1",
     "fuse.js": "^6.5.3",
-    "lowdb": "^3.0.0",
-    "uuid": "^8.3.2"
+    "octokit": "^2.0.7",
+    "ts-pattern": "^4.0.5",
+    "uuid": "^8.3.2",
+    "zod": "^3.19.0"
   },
   "devDependencies": {
+    "@octokit/types": "^7.3.1",
+    "@types/fs-extra": "^9.0.13",
     "@types/node": "~16.10.0",
-    "@types/ramda": "^0.28.14",
     "@types/react": "^17.0.28",
+    "@types/uuid": "^8.3.4",
     "@typescript-eslint/eslint-plugin": "^5.0.0",
     "@typescript-eslint/parser": "^5.0.0",
     "eslint": "^7.32.0",
     "eslint-config-prettier": "^8.3.0",
+    "eslint-plugin-import": "^2.26.0",
     "prettier": "^2.5.1",
-    "ramda": "^0.28.0",
     "react-devtools": "^4.19.2",
     "ts-node": "^10.8.1",
     "typescript": "^4.4.3"
