@@ -1,78 +1,101 @@
-import React from 'react'
-import { v4 as uuidv4 } from 'uuid'
 import {
   Action,
   ActionPanel,
   Clipboard,
   Form,
   Icon,
-  showToast,
   Toast,
+  showToast,
   useNavigation,
 } from '@raycast/api'
-import { db, InProgressBookmark } from './db'
+import { O, pipe, tap } from '@typedash/typedash'
+import * as TE from 'fp-ts/TaskEither'
+import React from 'react'
+import { z } from 'zod'
+import { createBookmark } from './db'
+import { FormErrors, SubmittedBookmark } from './types'
+import { TE_fromZodParse } from './utils'
+import { formErrors_from_zodError } from './utils/formErrors_from_ZodError'
+
+type setErrors = React.Dispatch<React.SetStateAction<FormErrors>>
 
 const CreateBookmark = () => {
   const [url, setUrl] = React.useState<string>()
+  const [errors, setErrors] = React.useState<FormErrors>({})
 
   React.useEffect(() => {
-    Clipboard.readText().then((text) => {
-      console.log('clipboard text', text)
-      setUrl(text)
-    })
+    Clipboard.readText().then((text) =>
+      pipe(
+        text,
+        O.fromPredicate((x) =>
+          pipe(x, z.string().url().safeParse, (result) => result.success),
+        ),
+        O.map(setUrl),
+      ),
+    )
   }, [])
 
   return (
     <Form
       actions={
         <ActionPanel>
-          <Submit />
+          <Submit setErrors={setErrors} />
         </ActionPanel>
       }
     >
-      <Form.TextField id="title" title="title" placeholder="Pretty Title" />
+      <Form.TextField
+        id="title"
+        title="Title"
+        placeholder="Pretty Title"
+        error={errors.title}
+      />
       <Form.TextField
         id="url"
-        title="url"
+        title="URL"
         placeholder="http://poop.bike"
         value={url}
         onChange={setUrl}
+        error={errors.url}
       />
       <Form.TextField
         id="keywords"
-        title="keywords"
+        title="Keywords"
         placeholder="searchable words or characters separated by spaces"
       />
     </Form>
   )
 }
 
-export const Submit = () => {
+export const Submit: React.FC<{ setErrors: setErrors }> = ({ setErrors }) => {
   const { pop } = useNavigation()
 
-  const handleSubmit = async ({ url, title, keywords }: InProgressBookmark) => {
-    if (!url) {
-      showToast({
-        style: Toast.Style.Failure,
-        title: 'url is required',
-      })
-      return null
-    }
-    db.read()
-    db.data.bookmarks.push({
-      id: uuidv4(),
-      url,
-      title: title || '',
-      keywords: keywords || '',
-    })
-    db.write()
-
-    showToast({
-      style: Toast.Style.Success,
-      title: `Added bookmark for ${url}`,
+  const handleSubmit = async (bookmark: Partial<SubmittedBookmark>) => {
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: `Creating bookmark: ${bookmark.title}`,
     })
 
-    pop()
+    await pipe(
+      TE.Do,
+      TE.bind('bookmark', () =>
+        pipe(bookmark, TE_fromZodParse(SubmittedBookmark)),
+      ),
+      TE.bindW('bookmarks', ({ bookmark }) =>
+        pipe(bookmark, createBookmark, TE.rightTask),
+      ),
+      TE.map(
+        tap(({ bookmark }) => {
+          toast.style = Toast.Style.Success
+          toast.title = `Created bookmark: ${bookmark.title}`
+        }),
+      ),
+      TE.match((error) => {
+        toast.style = Toast.Style.Failure
+        toast.title = `Bookmark creation failed`
+
+        pipe(error, formErrors_from_zodError, setErrors)
+      }, pop),
+    )()
   }
 
   return (

@@ -1,83 +1,99 @@
-import { v4 as uuidv4 } from 'uuid'
 import {
   Action,
   ActionPanel,
   Form,
   Icon,
-  showToast,
   Toast,
+  showToast,
   useNavigation,
 } from '@raycast/api'
-import { Bookmark, db, InProgressBookmark } from './db'
+import { pipe, tap } from '@typedash/typedash'
+import * as TE from 'fp-ts/TaskEither'
+import React from 'react'
+import { updateBookmark } from './db'
+import { Bookmark, FormErrors, SubmittedBookmark } from './types'
+import { TE_fromZodParse, formErrors_from_zodError } from './utils'
 
-export const EditBookmark: React.FC<
-  Bookmark & { refreshBookmarks: () => void }
-> = ({ id, url, title, keywords, refreshBookmarks }) => {
+type setErrors = React.Dispatch<React.SetStateAction<FormErrors>>
+
+export const EditBookmark: React.FC<{
+  bookmark: Bookmark
+  setAllBookmarks: (bookmarks: Array<Bookmark>) => void
+}> = ({ bookmark, setAllBookmarks }) => {
+  const [errors, setErrors] = React.useState<FormErrors>({})
+
   return (
     <Form
+      navigationTitle="Edit Bookmark"
       actions={
         <ActionPanel>
-          <Submit id={id} refreshBookmarks={refreshBookmarks} />
+          <Submit
+            id={bookmark.id}
+            setAllBookmarks={setAllBookmarks}
+            setErrors={setErrors}
+          />
         </ActionPanel>
       }
     >
       <Form.TextField
-        defaultValue={url}
+        defaultValue={bookmark.url}
         id="url"
-        title="url"
+        title="URL"
         placeholder="http://poop.bike"
+        error={errors.url}
       />
       <Form.TextField
-        defaultValue={title}
+        defaultValue={bookmark.title}
         id="title"
-        title="title"
+        title="Title"
         placeholder="Pretty Title"
+        error={errors.title}
       />
       <Form.TextField
-        defaultValue={keywords}
+        defaultValue={bookmark.keywords}
         id="keywords"
-        title="keywords"
+        title="Keywords"
         placeholder="searchable words or characters separated by spaces"
       />
     </Form>
   )
 }
 
-export const Submit: React.FC<
-  Pick<Bookmark, 'id'> & { refreshBookmarks: () => void }
-> = ({ id, refreshBookmarks }) => {
+export const Submit: React.FC<{
+  id: Bookmark['id']
+  setAllBookmarks: (bookmarks: Array<Bookmark>) => void
+  setErrors: setErrors
+}> = ({ id, setAllBookmarks, setErrors }) => {
   const { pop } = useNavigation()
 
-  const handleSubmit = async ({ url, title, keywords }: Bookmark) => {
-    if (!url) {
-      showToast({
-        style: Toast.Style.Failure,
-        title: 'url is required',
-      })
-      return null
-    }
-    db.read()
-    const existingBookmarkIndex = db.data.bookmarks.findIndex(
-      (x) => x.id === id,
-    )
-
-    if (existingBookmarkIndex !== -1) {
-      db.data.bookmarks[existingBookmarkIndex] = {
-        id,
-        url,
-        title,
-        keywords,
-      }
-      db.write()
-    }
-
-    showToast({
-      style: Toast.Style.Success,
-      title: `Edited bookmark for ${title}`,
+  const handleSubmit = async (bookmark: SubmittedBookmark) => {
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: `Updating bookmark: ${bookmark.title}`,
     })
 
-    refreshBookmarks()
-    pop()
+    await pipe(
+      TE.Do,
+      TE.bind('bookmark', () =>
+        pipe({ ...bookmark, id }, TE_fromZodParse(Bookmark)),
+      ),
+      TE.bindW('bookmarks', ({ bookmark }) =>
+        pipe(bookmark, updateBookmark, TE.rightTask),
+      ),
+      TE.map(tap(({ bookmarks }) => setAllBookmarks(bookmarks))),
+      TE.map(
+        tap(({ bookmark }) => {
+          toast.style = Toast.Style.Success
+          toast.title = `Updated bookmark: ${bookmark.title}`
+        }),
+      ),
+      TE.match((error) => {
+        toast.style = Toast.Style.Failure
+        toast.title = `Bookmark update failed`
+
+        pipe(error, formErrors_from_zodError, setErrors)
+      }, pop),
+    )()
   }
 
   return (

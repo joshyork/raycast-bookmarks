@@ -3,26 +3,24 @@ import {
   ActionPanel,
   Icon,
   List,
-  showToast,
   Toast,
+  showToast,
   useNavigation,
 } from '@raycast/api'
-import { pipe } from '@typedash/typedash'
+import { A, R, pipe, tap } from '@typedash/typedash'
 import * as T from 'fp-ts/Task'
 import Fuse from 'fuse.js'
 import React from 'react'
-import { Bookmark, getBookmarks } from './db'
+import { deleteBookmark, getBookmarks } from './db'
 import EditBookmark from './edit-bookmark'
+import { Bookmark } from './types'
 
 const SearchBookmarks = () => {
   const [allBookmarks, setAllBookmarks] = React.useState<Array<Bookmark>>([])
-  const [refreshCount, setRefreshCount] = React.useState(0)
   const [searchText, setSearchText] = React.useState('')
   const [searchResults, setSearchResults] = React.useState<Array<Bookmark>>([])
 
-  const refreshBookmarks = () => setRefreshCount((state) => state + 1)
-
-  React.useEffect(() => {
+  const fetchBookmarks = () =>
     pipe(
       getBookmarks(),
       T.map((bookmarks) => {
@@ -30,6 +28,9 @@ const SearchBookmarks = () => {
         setSearchResults(bookmarks)
       }),
     )()
+
+  React.useEffect(() => {
+    fetchBookmarks()
   }, [])
 
   React.useEffect(() => {
@@ -44,25 +45,25 @@ const SearchBookmarks = () => {
       keys: [
         {
           name: 'keywords',
-          weight: 10,
+          weight: 8,
         },
         {
           name: 'title',
-          weight: 2,
+          weight: 4,
         },
-        { name: 'url', weight: 0.5 },
+        { name: 'url', weight: 1 },
       ],
     })
-    const results = fuse.search(searchText)
-    setSearchResults(results.map((x) => x.item))
-  }, [searchText, refreshCount])
+
+    pipe(searchText, fuse.search, A.map(R.prop('item')), setSearchResults)
+  }, [searchText, allBookmarks])
 
   return (
     <List onSearchTextChange={setSearchText}>
       {searchResults.length === 0
         ? null
         : searchResults.map((bookmark, i) => {
-            const { title, url, keywords } = bookmark
+            const { title, url } = bookmark
             return (
               <List.Item
                 key={i}
@@ -77,9 +78,12 @@ const SearchBookmarks = () => {
                     <OpenUrl bookmark={bookmark} />
                     <EditItem
                       bookmark={bookmark}
-                      refreshBookmarks={refreshBookmarks}
+                      setAllBookmarks={setAllBookmarks}
                     />
-                    <DeleteBookmark bookmark={bookmark} />
+                    <DeleteBookmark
+                      bookmark={bookmark}
+                      setAllBookmarks={setAllBookmarks}
+                    />
                   </ActionPanel>
                 }
               />
@@ -89,9 +93,7 @@ const SearchBookmarks = () => {
   )
 }
 
-type BookmarkAction = React.FC<{ bookmark: Bookmark }>
-
-const OpenUrl: BookmarkAction = ({ bookmark }) => {
+const OpenUrl: React.FC<{ bookmark: Bookmark }> = ({ bookmark }) => {
   const { pop } = useNavigation()
 
   return (
@@ -104,30 +106,43 @@ const OpenUrl: BookmarkAction = ({ bookmark }) => {
   )
 }
 
-const DeleteBookmark: BookmarkAction = ({ bookmark }) => {
-  return (
-    <Action
-      title="Delete Bookmark"
-      onAction={() => {
-        showToast({
-          style: Toast.Style.Success,
-          title: `Fake deleting bookmark ${bookmark.id} ${bookmark.title}`,
-        })
-      }}
-    />
-  )
-}
-
 const EditItem: React.FC<{
   bookmark: Bookmark
-  refreshBookmarks: () => void
-}> = ({ bookmark, refreshBookmarks }) => {
+  setAllBookmarks: (bookmarks: Array<Bookmark>) => void
+}> = ({ bookmark, setAllBookmarks }) => {
   return (
     <Action.Push
       title="Edit Bookmark"
       target={
-        <EditBookmark {...bookmark} refreshBookmarks={refreshBookmarks} />
+        <EditBookmark bookmark={bookmark} setAllBookmarks={setAllBookmarks} />
       }
+    />
+  )
+}
+
+const DeleteBookmark: React.FC<{
+  bookmark: Bookmark
+  setAllBookmarks: (bookmarks: Array<Bookmark>) => void
+}> = ({ bookmark, setAllBookmarks }) => {
+  return (
+    <Action
+      title="Delete Bookmark"
+      style={Action.Style.Destructive}
+      onAction={async () => {
+        const toast = await showToast({
+          style: Toast.Style.Animated,
+          title: `Deleting bookmark ${bookmark.title}`,
+        })
+
+        await pipe(
+          deleteBookmark(bookmark),
+          T.map(tap(setAllBookmarks)),
+          T.map(() => {
+            toast.style = Toast.Style.Success
+            toast.title = `Deleted bookmark ${bookmark.title}`
+          }),
+        )()
+      }}
     />
   )
 }
