@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid'
 import {
   Action,
   ActionPanel,
+  Clipboard,
   Form,
   Icon,
   showToast,
@@ -12,6 +13,15 @@ import {
 import { db, InProgressBookmark } from './db'
 
 const CreateBookmark = () => {
+  const [url, setUrl] = React.useState<string>()
+
+  React.useEffect(() => {
+    Clipboard.readText().then((text) => {
+      console.log('clipboard text', text)
+      setUrl(text)
+    })
+  }, [])
+
   return (
     <Form
       actions={
@@ -20,8 +30,14 @@ const CreateBookmark = () => {
         </ActionPanel>
       }
     >
-      <Form.TextField id="url" title="url" placeholder="http://poop.bike" />
       <Form.TextField id="title" title="title" placeholder="Pretty Title" />
+      <Form.TextField
+        id="url"
+        title="url"
+        placeholder="http://poop.bike"
+        value={url}
+        onChange={setUrl}
+      />
       <Form.TextField
         id="keywords"
         title="keywords"

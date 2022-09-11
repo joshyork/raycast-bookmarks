@@ -1,37 +1,44 @@
-import React from 'react'
 import {
-  List,
-  ActionPanel,
   Action,
+  ActionPanel,
   Icon,
+  List,
   showToast,
   Toast,
   useNavigation,
 } from '@raycast/api'
+import { pipe } from '@typedash/typedash'
+import * as T from 'fp-ts/Task'
 import Fuse from 'fuse.js'
-import { Bookmark, db } from './db'
+import React from 'react'
+import { Bookmark, getBookmarks } from './db'
 import EditBookmark from './edit-bookmark'
 
 const SearchBookmarks = () => {
+  const [allBookmarks, setAllBookmarks] = React.useState<Array<Bookmark>>([])
   const [refreshCount, setRefreshCount] = React.useState(0)
   const [searchText, setSearchText] = React.useState('')
-  const [filteredList, setFilteredList] = React.useState<Array<Bookmark>>([])
+  const [searchResults, setSearchResults] = React.useState<Array<Bookmark>>([])
 
   const refreshBookmarks = () => setRefreshCount((state) => state + 1)
 
   React.useEffect(() => {
-    db.read()
-    setFilteredList(db.data.bookmarks)
+    pipe(
+      getBookmarks(),
+      T.map((bookmarks) => {
+        setAllBookmarks(bookmarks)
+        setSearchResults(bookmarks)
+      }),
+    )()
   }, [])
 
   React.useEffect(() => {
     if (!searchText) {
-      setFilteredList(db.data.bookmarks)
+      setSearchResults(allBookmarks)
       return
     }
 
-    db.read()
-    const fuse = new Fuse(db.data.bookmarks, {
+    const fuse = new Fuse(allBookmarks, {
       includeScore: true,
       useExtendedSearch: true,
       keys: [
@@ -47,20 +54,24 @@ const SearchBookmarks = () => {
       ],
     })
     const results = fuse.search(searchText)
-    setFilteredList(results.map((x) => x.item))
+    setSearchResults(results.map((x) => x.item))
   }, [searchText, refreshCount])
 
   return (
     <List onSearchTextChange={setSearchText}>
-      {filteredList.length === 0
+      {searchResults.length === 0
         ? null
-        : filteredList.map((bookmark, i) => {
+        : searchResults.map((bookmark, i) => {
             const { title, url, keywords } = bookmark
             return (
               <List.Item
                 key={i}
+                icon={{
+                  source: `https://www.google.com/s2/favicons?domain=${url}`,
+                  fallback: 'white_globe.png',
+                }}
                 title={title}
-                subtitle={`${keywords} | ${url}`}
+                subtitle={url}
                 actions={
                   <ActionPanel>
                     <OpenUrl bookmark={bookmark} />
