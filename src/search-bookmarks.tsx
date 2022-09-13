@@ -7,9 +7,9 @@ import {
   showToast,
   useNavigation,
 } from '@raycast/api'
-import { A, R, pipe, tap } from '@typedash/typedash'
+import { R, pipe, tap } from '@typedash/typedash'
 import * as T from 'fp-ts/Task'
-import Fuse from 'fuse.js'
+import fuzzysort from 'fuzzysort'
 import React from 'react'
 import { deleteBookmark, getBookmarks } from './db'
 import EditBookmark from './edit-bookmark'
@@ -39,23 +39,14 @@ const SearchBookmarks = () => {
       return
     }
 
-    const fuse = new Fuse(allBookmarks, {
-      includeScore: true,
-      useExtendedSearch: true,
-      keys: [
-        {
-          name: 'keywords',
-          weight: 8,
-        },
-        {
-          name: 'title',
-          weight: 4,
-        },
-        { name: 'url', weight: 1 },
-      ],
-    })
-
-    pipe(fuse.search(searchText), A.map(R.prop('item')), setSearchResults)
+    pipe(
+      fuzzysort.go(searchText, allBookmarks, {
+        keys: ['keywords', 'title', 'url'],
+      }),
+      // types aren't happy with A.map
+      (x) => x.map(R.prop('obj')),
+      setSearchResults,
+    )
   }, [searchText, allBookmarks])
 
   return (

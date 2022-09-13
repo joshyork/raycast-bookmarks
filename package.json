@@ -42,6 +42,7 @@
     "fp-ts": "2.11.5",
     "fs-extra": "^10.0.1",
     "fuse.js": "^6.5.3",
+    "fuzzysort": "^2.0.1",
     "octokit": "^2.0.7",
     "ts-pattern": "^4.0.5",
     "uuid": "^8.3.2",
