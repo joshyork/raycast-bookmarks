@@ -13,6 +13,7 @@ import * as TE from 'fp-ts/TaskEither'
 import React from 'react'
 import { z } from 'zod'
 import { createBookmark } from './db'
+import { ZodError } from './error'
 import { FormErrors, SubmittedBookmark } from './types'
 import { TE_fromZodParse } from './utils'
 import { formErrors_from_zodError } from './utils/formErrors_from_ZodError'
@@ -93,7 +94,9 @@ export const Submit: React.FC<{ setErrors: setErrors }> = ({ setErrors }) => {
         toast.style = Toast.Style.Failure
         toast.title = `Bookmark creation failed`
 
-        pipe(error, formErrors_from_zodError, setErrors)
+        if (error instanceof ZodError) {
+          pipe(error, formErrors_from_zodError, setErrors)
+        }
       }, pop),
     )()
   }

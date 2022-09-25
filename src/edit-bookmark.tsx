@@ -11,6 +11,7 @@ import { pipe, tap } from '@typedash/typedash'
 import * as TE from 'fp-ts/TaskEither'
 import React from 'react'
 import { updateBookmark } from './db'
+import { ZodError } from './error'
 import { Bookmark, FormErrors, SubmittedBookmark } from './types'
 import { TE_fromZodParse, formErrors_from_zodError } from './utils'
 
@@ -77,9 +78,7 @@ export const Submit: React.FC<{
       TE.bind('bookmark', () =>
         pipe({ ...bookmark, id }, TE_fromZodParse(Bookmark)),
       ),
-      TE.bindW('bookmarks', ({ bookmark }) =>
-        pipe(bookmark, updateBookmark, TE.rightTask),
-      ),
+      TE.bindW('bookmarks', ({ bookmark }) => pipe(bookmark, updateBookmark)),
       TE.map(tap(({ bookmarks }) => setAllBookmarks(bookmarks))),
       TE.map(
         tap(({ bookmark }) => {
@@ -91,7 +90,9 @@ export const Submit: React.FC<{
         toast.style = Toast.Style.Failure
         toast.title = `Bookmark update failed`
 
-        pipe(error, formErrors_from_zodError, setErrors)
+        if (error instanceof ZodError) {
+          pipe(error, formErrors_from_zodError, setErrors)
+        }
       }, pop),
     )()
   }

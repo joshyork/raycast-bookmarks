@@ -8,10 +8,10 @@ import {
   useNavigation,
 } from '@raycast/api'
 import { R, pipe, tap } from '@typedash/typedash'
-import * as T from 'fp-ts/Task'
+import * as TE from 'fp-ts/TaskEither'
 import fuzzysort from 'fuzzysort'
 import React from 'react'
-import { deleteBookmark, getBookmarks } from './db'
+import { deleteBookmark, getAndCacheBookmarks, getCachedBookmarks } from './db'
 import EditBookmark from './edit-bookmark'
 import { Bookmark } from './types'
 
@@ -20,17 +20,26 @@ const SearchBookmarks = () => {
   const [searchText, setSearchText] = React.useState('')
   const [searchResults, setSearchResults] = React.useState<Array<Bookmark>>([])
 
-  const fetchBookmarks = () =>
-    pipe(
-      getBookmarks(),
-      T.map((bookmarks) => {
-        setAllBookmarks(bookmarks)
-        setSearchResults(bookmarks)
-      }),
-    )()
-
   React.useEffect(() => {
-    fetchBookmarks()
+    const getInitialBookmarks = () =>
+      pipe(
+        getCachedBookmarks(),
+        TE.map((bookmarks) => {
+          setAllBookmarks(bookmarks)
+          setSearchResults(bookmarks)
+        }),
+      )()
+    const getHydratedBookmarks = () =>
+      pipe(
+        getAndCacheBookmarks(),
+        TE.map((bookmarks) => {
+          setAllBookmarks(bookmarks)
+          setSearchResults(bookmarks)
+        }),
+      )()
+
+    getInitialBookmarks()
+    getHydratedBookmarks()
   }, [])
 
   React.useEffect(() => {
@@ -74,6 +83,11 @@ const SearchBookmarks = () => {
                     <DeleteBookmark
                       bookmark={bookmark}
                       setAllBookmarks={setAllBookmarks}
+                    />
+                    <Action.CopyToClipboard
+                      title="Copy URL to clipboard"
+                      content={bookmark.url}
+                      shortcut={{ modifiers: ['cmd'], key: '.' }}
                     />
                   </ActionPanel>
                 }
@@ -127,8 +141,8 @@ const DeleteBookmark: React.FC<{
 
         await pipe(
           deleteBookmark(bookmark),
-          T.map(tap(setAllBookmarks)),
-          T.map(() => {
+          TE.map(tap(setAllBookmarks)),
+          TE.map(() => {
             toast.style = Toast.Style.Success
             toast.title = `Deleted bookmark ${bookmark.title}`
           }),

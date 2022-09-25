@@ -1,13 +1,17 @@
 import { Endpoints } from '@octokit/types'
 import { LocalStorage } from '@raycast/api'
 import { A, R, S, pipe } from '@typedash/typedash'
-import * as T from 'fp-ts/Task'
-import * as TO from 'fp-ts/TaskOption'
+import * as TE from 'fp-ts/TaskEither'
 import { Octokit } from 'octokit'
 import { v4 } from 'uuid'
 import { z } from 'zod'
+import { appErrorF, appErrorFThunk } from './error'
 import { Bookmark } from './types'
-import { getPreferenceValues, serializeGistData } from './utils'
+import {
+  TE_fromZodParse,
+  getPreferenceValues,
+  serializeGistData,
+} from './utils'
 
 type GistResponse = Omit<Endpoints['POST /gists']['response'], 'status'>
 
@@ -15,81 +19,117 @@ const GistContent = z.object({
   bookmarks: z.array(Bookmark),
 })
 
+type GistContent = z.infer<typeof GistContent>
+
 export const octokit = new Octokit({
   auth: getPreferenceValues().gh_access_token,
 })
 
 export const FILENAME = 'raycast-bookmarks.json'
 export const GIST_ID_STORAGE_KEY = 'gh_gist_id'
+export const BOOKMARKS_STORAGE_KEY = 'bookmarks-cache'
 
-const getBookmarksFromGistResponse = (x: TO.TaskOption<GistResponse>) =>
+const getContentFromGistResponse = (x: GistResponse) =>
   pipe(
-    x,
-    TO.map((x) => x.data.files),
-    TO.chain(TO.fromNullable),
-    TO.map(R.prop(FILENAME)),
-    TO.chain(TO.fromNullable),
-    TO.map(R.prop('content')),
-    TO.chain(TO.fromNullable),
-    TO.map(JSON.parse),
-    TO.map(GistContent.parse),
-    TO.map(R.prop('bookmarks')),
+    x.data.files,
+    TE.fromNullable(appErrorF('Gist files not found')),
+    TE.map(R.prop(FILENAME)),
+    TE.chain(
+      TE.fromNullable(appErrorF(`${FILENAME} not found in gist response`)),
+    ),
+    TE.map(R.prop('content')),
+    TE.chain(TE.fromNullable(appErrorF('Gist content is undefined'))),
+    TE.map(JSON.parse),
+    TE.chain(TE_fromZodParse(GistContent)),
   )
 
-const getOrEmptyBookmarks = TO.getOrElseW(
-  () => () => Promise.resolve([] as Array<Bookmark>),
-)
-
-export const getBookmarks = () =>
+export const getCachedBookmarks = () =>
   pipe(
-    () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
-    TO.fromTask,
-    TO.chain(TO.fromPredicate(S.isString)),
-    TO.chain((gist_id) =>
-      TO.fromTask(() => octokit.rest.gists.get({ gist_id })),
-    ),
-    getBookmarksFromGistResponse,
-    TO.getOrElseW(() =>
-      pipe(
-        () =>
-          octokit.rest.gists.create({
-            description: 'Raycast Bookmarks',
-            files: {
-              [FILENAME]: {
-                content: serializeGistData({ bookmarks: [] }),
-              },
-            },
-          }),
-        T.map((x) => {
-          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-          LocalStorage.setItem(GIST_ID_STORAGE_KEY, x.data.id!)
-          return x
-        }),
-        TO.fromTask,
-        getBookmarksFromGistResponse,
-        getOrEmptyBookmarks,
+    () => LocalStorage.getItem(BOOKMARKS_STORAGE_KEY),
+    TE.fromTask,
+    TE.chain(
+      TE.fromPredicate(
+        S.isString,
+        appErrorFThunk(`${BOOKMARKS_STORAGE_KEY} is not a string`),
       ),
     ),
+    TE.map(JSON.parse),
+    TE.map(GistContent.parse),
+    TE.map(R.prop('bookmarks')),
+  )
+
+export const getAndCacheBookmarks = () =>
+  pipe(
+    TE.tryCatch(
+      () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
+      appErrorFThunk(`Failed to read gist id from storage`),
+    ),
+    TE.chain(
+      TE.fromPredicate(
+        S.isString,
+        appErrorFThunk(`${GIST_ID_STORAGE_KEY} is not a string`),
+      ),
+    ),
+    TE.chain((gist_id) =>
+      TE.fromTask(() => octokit.rest.gists.get({ gist_id })),
+    ),
+    TE.chain(getContentFromGistResponse),
+    // TODO: create more error types and branch on instanceof to only create a
+    // new gist when a gist id doesn't exist. This would prevent accidental
+    // spamming on new gists while developing.
+    TE.orElse(() =>
+      pipe(
+        TE.tryCatch(
+          () =>
+            octokit.rest.gists.create({
+              description: 'Raycast Bookmarks',
+              files: {
+                [FILENAME]: {
+                  content: serializeGistData({ bookmarks: [] }),
+                },
+              },
+            }),
+          appErrorFThunk('Failed to create gist'),
+        ),
+        TE.chainFirst((x) =>
+          TE.tryCatch(
+            () =>
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+              LocalStorage.setItem(GIST_ID_STORAGE_KEY, x.data.id!),
+            appErrorFThunk('Failed to write gist id to storage'),
+          ),
+        ),
+        TE.chain(getContentFromGistResponse),
+      ),
+    ),
+    TE.chainFirst((content) =>
+      TE.tryCatch(
+        () =>
+          LocalStorage.setItem(BOOKMARKS_STORAGE_KEY, JSON.stringify(content)),
+        appErrorFThunk('Failed to store bookmarks in cache'),
+      ),
+    ),
+    TE.map(R.prop('bookmarks')),
   )
 
 export const createBookmark = (bookmark: Omit<Bookmark, 'id'>) =>
   pipe(
-    T.Do,
-    T.bind(
-      'newBookmark',
-      () => () => Promise.resolve({ ...bookmark, id: v4() }),
+    TE.Do,
+    TE.bind('newBookmark', () => TE.of({ ...bookmark, id: v4() })),
+    TE.bind('bookmarks', ({ newBookmark }) =>
+      pipe(getAndCacheBookmarks(), (x) => x, TE.map(A.concat([newBookmark]))),
     ),
-    T.bind('bookmarks', ({ newBookmark }) =>
-      pipe(getBookmarks(), T.map(A.concat([newBookmark]))),
-    ),
-    T.bind('gistId', () =>
+    TE.bind('gistId', () =>
       pipe(
-        () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
-        T.map(z.string().parse),
+        TE.tryCatch(
+          () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
+          appErrorFThunk(`Failed to read gist id`),
+        ),
+        TE.chain(TE_fromZodParse(z.string())),
       ),
     ),
-    T.chain(
-      ({ gistId, bookmarks, newBookmark }) =>
+    TE.chain(({ gistId, bookmarks, newBookmark }) =>
+      TE.tryCatch(
         () =>
           octokit.request('PATCH /gists/{gist_id}', {
             gist_id: gistId,
@@ -100,19 +140,20 @@ export const createBookmark = (bookmark: Omit<Bookmark, 'id'>) =>
               },
             },
           }),
+        appErrorFThunk('Failed to create new bookmark'),
+      ),
     ),
-    TO.fromTask,
-    getBookmarksFromGistResponse,
-    getOrEmptyBookmarks,
+    TE.chain(getContentFromGistResponse),
+    TE.map(R.prop('bookmarks')),
   )
 
 export const updateBookmark = (bookmark: Bookmark) =>
   pipe(
-    T.Do,
-    T.bind('bookmarks', () =>
+    TE.Do,
+    TE.bind('bookmarks', () =>
       pipe(
-        getBookmarks(),
-        T.map(
+        getAndCacheBookmarks(),
+        TE.map(
           A.map((mark) => {
             if (mark.id === bookmark.id) {
               return bookmark
@@ -123,14 +164,17 @@ export const updateBookmark = (bookmark: Bookmark) =>
         ),
       ),
     ),
-    T.bind('gistId', () =>
+    TE.bind('gistId', () =>
       pipe(
-        () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
-        T.map(z.string().parse),
+        TE.tryCatch(
+          () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
+          appErrorFThunk('Failed to read gist id'),
+        ),
+        TE.chain(TE_fromZodParse(z.string())),
       ),
     ),
-    T.chain(
-      ({ gistId, bookmarks }) =>
+    TE.chain(({ gistId, bookmarks }) =>
+      TE.tryCatch(
         () =>
           octokit.request('PATCH /gists/{gist_id}', {
             gist_id: gistId,
@@ -141,26 +185,33 @@ export const updateBookmark = (bookmark: Bookmark) =>
               },
             },
           }),
+        appErrorFThunk('Failed to update gist'),
+      ),
     ),
-    TO.fromTask,
-    getBookmarksFromGistResponse,
-    getOrEmptyBookmarks,
+    TE.chain(getContentFromGistResponse),
+    TE.map(R.prop('bookmarks')),
   )
 
 export const deleteBookmark = (bookmark: Bookmark) =>
   pipe(
-    T.Do,
-    T.bind('bookmarks', () =>
-      pipe(getBookmarks(), T.map(A.reject(R.whereEq({ id: bookmark.id })))),
-    ),
-    T.bind('gistId', () =>
+    TE.Do,
+    TE.bind('bookmarks', () =>
       pipe(
-        () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
-        T.map(z.string().parse),
+        getAndCacheBookmarks(),
+        TE.map(A.reject(R.whereEq({ id: bookmark.id }))),
       ),
     ),
-    T.chain(
-      ({ gistId, bookmarks }) =>
+    TE.bind('gistId', () =>
+      pipe(
+        TE.tryCatch(
+          () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
+          appErrorFThunk('failed to read gist id'),
+        ),
+        TE.chain(TE_fromZodParse(z.string())),
+      ),
+    ),
+    TE.chain(({ gistId, bookmarks }) =>
+      TE.tryCatch(
         () =>
           octokit.request('PATCH /gists/{gist_id}', {
             gist_id: gistId,
@@ -171,8 +222,9 @@ export const deleteBookmark = (bookmark: Bookmark) =>
               },
             },
           }),
+        appErrorFThunk('Failed to remove bookmark'),
+      ),
     ),
-    TO.fromTask,
-    getBookmarksFromGistResponse,
-    getOrEmptyBookmarks,
+    TE.chain(getContentFromGistResponse),
+    TE.map(R.prop('bookmarks')),
   )
