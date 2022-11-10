@@ -1,7 +1,6 @@
 import { Endpoints } from '@octokit/types'
 import { LocalStorage } from '@raycast/api'
-import { A, R, S, pipe } from '@typedash/typedash'
-import * as TE from 'fp-ts/TaskEither'
+import { A, R, S, TE, pipe } from '@typedash/typedash'
 import { Octokit } from 'octokit'
 import { v4 } from 'uuid'
 import { z } from 'zod'
@@ -70,7 +69,7 @@ export const getAndCacheBookmarks = () =>
         appErrorFThunk(`${GIST_ID_STORAGE_KEY} is not a string`),
       ),
     ),
-    TE.chain((gist_id) =>
+    TE.chainW((gist_id) =>
       TE.fromTask(() => octokit.rest.gists.get({ gist_id })),
     ),
     TE.chain(getContentFromGistResponse),

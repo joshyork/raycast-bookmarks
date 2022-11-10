@@ -38,9 +38,8 @@
   },
   "dependencies": {
     "@raycast/api": "^1.39.3",
-    "@typedash/typedash": "^0.0.1",
+    "@typedash/typedash": "^1.5.0",
     "@types/ramda": "^0.28.15",
-    "fp-ts": "2.11.5",
     "fs-extra": "^10.0.1",
     "fuse.js": "^6.5.3",
     "fuzzysort": "^2.0.1",
