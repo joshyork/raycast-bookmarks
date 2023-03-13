@@ -2,7 +2,7 @@
   "$schema": "https://www.raycast.com/schemas/extension.json",
   "name": "bookmarks",
   "title": "Bookmarks",
-  "description": "",
+  "description": "A fuzzy-find bookmarks manager for those that don't want to manage bookmarks!",
   "icon": "command-icon.png",
   "author": "JoshYork",
   "license": "MIT",
@@ -10,13 +10,13 @@
     {
       "name": "create-bookmark",
       "title": "Create Bookmark",
-      "description": "",
+      "description": "Command to add new bookmarks to the GitHub Gist",
       "mode": "view"
     },
     {
       "name": "search-bookmarks",
       "title": "Search Bookmarks",
-      "description": "",
+      "description": "Search existing bookmarks in the GitHub Gist",
       "mode": "view"
     }
   ],
@@ -27,6 +27,13 @@
       "required": true,
       "title": "GitHub Personal Access token",
       "description": "Personal Access token with permissions to create Gists"
+    },
+    {
+      "name": "gist_id",
+      "type": "textfield",
+      "required": false,
+      "title": "GitHub Gist To Store Bookmarks",
+      "description": "This will be created automatically if you don't provide one"
     }
   ],
   "scripts": {
