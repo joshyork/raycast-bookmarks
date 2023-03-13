@@ -1,6 +1,6 @@
 import { Endpoints } from '@octokit/types'
 import { LocalStorage } from '@raycast/api'
-import { A, R, S, TE, constTrue, pipe, tapLogTag } from '@typedash/typedash'
+import { A, R, S, TE, constTrue, pipe } from '@typedash/typedash'
 import { Octokit } from 'octokit'
 import { P, match } from 'ts-pattern'
 import { v4 } from 'uuid'
@@ -66,7 +66,6 @@ export const getAndCacheBookmarks = () =>
       .with(P.string, (gist_id) =>
         pipe(
           gist_id,
-          tapLogTag('gist_id in match'),
           TE.tryCatchK(
             (x) => LocalStorage.setItem(GIST_ID_STORAGE_KEY, x),
             appErrorFThunk('Failed to write gist id to storage'),
