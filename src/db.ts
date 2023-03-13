@@ -1,10 +1,11 @@
 import { Endpoints } from '@octokit/types'
 import { LocalStorage } from '@raycast/api'
-import { A, R, S, TE, pipe } from '@typedash/typedash'
+import { A, R, S, TE, constTrue, pipe } from '@typedash/typedash'
 import { Octokit } from 'octokit'
+import { P, match } from 'ts-pattern'
 import { v4 } from 'uuid'
 import { z } from 'zod'
-import { appErrorF, appErrorFThunk } from './error'
+import { AppError, appErrorF, appErrorFThunk } from './error'
 import { Bookmark } from './types'
 import {
   TE_fromZodParse,
@@ -59,9 +60,25 @@ export const getCachedBookmarks = () =>
 
 export const getAndCacheBookmarks = () =>
   pipe(
-    TE.tryCatch(
-      () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
-      appErrorFThunk(`Failed to read gist id from storage`),
+    // Attempt to setup gist id from preferences
+    match(getPreferenceValues().gist_id)
+      .with('', P.nullish, () => TE.right<AppError, boolean>(false))
+      .with(P.string, (gist_id) =>
+        pipe(
+          gist_id,
+          TE.tryCatchK(
+            (x) => LocalStorage.setItem(GIST_ID_STORAGE_KEY, x),
+            appErrorFThunk('Failed to write gist id to storage'),
+          ),
+          TE.map(constTrue),
+        ),
+      )
+      .exhaustive(),
+    TE.chain(
+      TE.tryCatchK(
+        () => LocalStorage.getItem(GIST_ID_STORAGE_KEY),
+        appErrorFThunk(`Failed to read gist id from storage`),
+      ),
     ),
     TE.chain(
       TE.fromPredicate(
